@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live GPS Tracker</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body, html { margin:0; padding:0; height:100%; font-family: system-ui, sans-serif; }
+    #map { height: 100vh; width: 100%; }
+    .header {
+      position: absolute; top: 15px; left: 50%; transform: translateX(-50%);
+      background: rgba(255,255,255,0.95); padding: 12px 24px; border-radius: 50px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2); z-index: 1000; text-align: center;
+      backdrop-filter: blur(10px);
+    }
+    .status {
+      position: absolute; bottom: 20px; left: 20px; background: white; padding: 15px;
+      border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); z-index: 1000;
+      min-width: 240px; font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header"><h2>📍 My GPS Live Location</h2></div>
+  <div id="map"></div>
+  
+  <div class="status" id="status">
+    <strong>Status:</strong> Connecting...<br>
+    <small id="coords"></small>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    let map, marker, trail = [];
+    function initMap() {
+      map = L.map('map').setView([28.6139, 77.2090], 15);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap'
+      }).addTo(map);
+      marker = L.marker([28.6139, 77.2090]).addTo(map);
+      L.polyline([], {color: '#3388ff', weight: 5}).addTo(map);
+    }
+
+    const socket = io();
+    socket.on('locationUpdate', (data) => {
+      const {lat, lng, timestamp} = data;
+      marker.setLatLng([lat, lng]);
+      map.flyTo([lat, lng], 16, {duration: 1.5});
+
+      trail.push([lat, lng]);
+      if (trail.length > 100) trail.shift();
+      // simple trail update (re-draw)
+      const poly = L.polyline(trail, {color: '#3388ff', weight: 5}).addTo(map);
+      setTimeout(() => map.removeLayer(poly), 0); // instant redraw
+
+      document.getElementById('status').innerHTML = `
+        <strong>Status:</strong> LIVE ✅<br>
+        <strong>Lat:</strong> ${lat.toFixed(6)}<br>
+        <strong>Lng:</strong> ${lng.toFixed(6)}<br>
+        <strong>Updated:</strong> ${new Date(timestamp).toLocaleString()}
+      `;
+    });
+
+    // fallback polling (works even if socket drops)
+    setInterval(() => {
+      fetch('/api/location').then(r => r.json()).then(data => {
+        if (data.lat) socket.emit('locationUpdate', data); // reuse same handler
+      });
+    }, 10000);
+
+    window.onload = initMap;
+  </script>
+</body>
+</html>
